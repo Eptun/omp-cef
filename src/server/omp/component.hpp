@@ -26,6 +26,8 @@ public:
     void free() override;
     void reset() override;
 
+    IExtension* getExtension(UID id) override;
+
     void onAmxLoad(IPawnScript& script) override;
     void onAmxUnload(IPawnScript& script) override;
 

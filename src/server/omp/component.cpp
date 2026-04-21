@@ -1,5 +1,6 @@
 #include "component.hpp"
 #include "omp_bridge.hpp"
+#include "cef_extension_api.hpp"
 
 #include <Server/Components/Pawn/Impl/pawn_natives.hpp>
 #include <Server/Components/Pawn/Impl/pawn_impl.hpp>
@@ -109,6 +110,15 @@ void CefOmpComponent::free()
 }
 
 void CefOmpComponent::reset() {}
+
+IExtension* CefOmpComponent::getExtension(UID id)
+{
+    if (id == ICefComponent::ExtensionIID)
+    {
+        return GetCefExtension();
+    }
+    return nullptr;
+}
 
 void CefOmpComponent::onAmxLoad(IPawnScript& script) 
 {

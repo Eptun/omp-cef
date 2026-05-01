@@ -32,14 +32,12 @@ jobs:
             cmake ninja-build g++ pkg-config curl zip unzip tar
 
       - name: Bootstrap vcpkg
-        # lukka/run-vcpkg@v11 ожидает vcpkg как сабмодуль или валидный путь и
-        # ломается на чистом репо. Bootstrap'им руками — то же что мы делаем в
-        # Dockerfile, плюс GHA-cache на installed/ и archives/ для binary cache.
         run: |
           set -e
           VCPKG_DIR="$GITHUB_WORKSPACE/vcpkg"
+          BASELINE=$(jq -r '."builtin-baseline"' vcpkg.json)
           git clone https://github.com/microsoft/vcpkg.git "$VCPKG_DIR"
-          git -C "$VCPKG_DIR" checkout 3f51ee54c1b56a8c84cdd23eb1b6a7eaf65bb01f
+          git -C "$VCPKG_DIR" checkout "$BASELINE"
           "$VCPKG_DIR/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$VCPKG_DIR" >> "$GITHUB_ENV"
 

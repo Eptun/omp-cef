@@ -1,17 +1,50 @@
 #include "player_stats.hpp"
 
 #include <cmath>
+#include <string>
 
+#include <include/base/cef_bind.h>
 #include <include/cef_process_message.h>
+#include <include/cef_task.h>
+#include <include/wrapper/cef_closure_task.h>
 #include <nlohmann/json.hpp>
 
 #include "utf8.hpp"
-
 #include "browser/manager.hpp"
 
-static inline bool NearlyEqual(float a, float b, float eps = 0.001f) noexcept
+namespace
 {
-    return std::fabs(a - b) < eps;
+    inline bool NearlyEqual(float a, float b, float eps = 0.001f) noexcept
+    {
+        return std::fabs(a - b) < eps;
+    }
+
+    void SendEmitEventOnUiThread(
+        CefRefPtr<CefBrowser> browser,
+        std::string eventName,
+        std::string jsonPayload)
+    {
+        if (!browser)
+            return;
+
+        if (!browser->IsValid())
+            return;
+
+        CefRefPtr<CefFrame> frame = browser->GetMainFrame();
+        if (!frame)
+            return;
+
+        if (!frame->IsValid())
+            return;
+
+        CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create("emit_event");
+        CefRefPtr<CefListValue> list = msg->GetArgumentList();
+
+        list->SetString(0, EnsureUtf8ForCef(eventName));
+        list->SetString(1, EnsureUtf8ForCef(jsonPayload));
+
+        frame->SendProcessMessage(PID_RENDERER, msg);
+    }
 }
 
 bool PlayerStats::Equal(const Snapshot& a, const Snapshot& b) noexcept
@@ -77,14 +110,35 @@ std::string PlayerStats::ToJson(const Snapshot& snapshot)
 
 void PlayerStats::EmitJson(BrowserInstance* instance, std::string_view eventName, std::string_view jsonPayload)
 {
-    if (!instance || !instance->browser)
+    if (!instance)
         return;
 
-    CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create("emit_event");
-    CefRefPtr<CefListValue> list = msg->GetArgumentList();
+    CefRefPtr<CefBrowser> browser = instance->browser;
+    if (!browser)
+        return;
 
-    list->SetString(0, EnsureUtf8ForCef(eventName));
-    list->SetString(1, EnsureUtf8ForCef(jsonPayload));
+    std::string eventNameCopy(eventName);
+    std::string jsonPayloadCopy(jsonPayload);
 
-    instance->browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
+    if (CefCurrentlyOn(TID_UI))
+    {
+        SendEmitEventOnUiThread(
+            browser,
+            std::move(eventNameCopy),
+            std::move(jsonPayloadCopy)
+        );
+        return;
+    }
+
+    CefPostTask(
+        TID_UI,
+        CefCreateClosureTask(
+            base::BindOnce(
+                &SendEmitEventOnUiThread,
+                browser,
+                std::move(eventNameCopy),
+                std::move(jsonPayloadCopy)
+            )
+        )
+    );
 }

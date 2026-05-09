@@ -13,6 +13,7 @@
 #include "include/cef_browser.h"
 #include "rendering/view.hpp"
 #include "rendering/world_renderer.hpp"
+#include "shared/packet.hpp"
 
 class AudioManager;
 class FocusManager;
@@ -68,6 +69,7 @@ struct BrowserInstance
 
     bool visible = true;
     bool controls_chat_input = true;
+    bool closing = false;
 
     bool devtools_requested = false;
     bool devtools_open = false;
@@ -142,6 +144,7 @@ public:
 
     void SetPlayerStatsPolling(int browserId, bool enabled, int intervalMs);
     void TickGameData();
+    void OnGameFocusLost();
 
     void ExitGame();
 

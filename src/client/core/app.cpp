@@ -18,12 +18,25 @@
 #include "samp/common.hpp"
 #include "utf8.hpp"
 
-
-static void SendEmitToBrowser(BrowserManager& browserManager, int browserId, const std::string& name, const std::vector<Argument>& args)
+static bool SendEmitToBrowser(BrowserManager& browserManager, int browserId, const std::string& name, const std::vector<Argument>& args)
 {
     auto* instance = browserManager.GetBrowserInstance(browserId);
-    if (!instance || !instance->browser)
-        return;
+    if (!instance)
+        return false;
+
+    CefRefPtr<CefBrowser> browser = instance->browser;
+    if (!browser)
+        return false;
+
+    if (!browser->IsValid())
+        return false;
+
+    CefRefPtr<CefFrame> frame = browser->GetMainFrame();
+    if (!frame)
+        return false;
+
+    if (!frame->IsValid())
+        return false;
 
     CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create("emit_event");
     CefRefPtr<CefListValue> list = msg->GetArgumentList();
@@ -37,25 +50,30 @@ static void SendEmitToBrowser(BrowserManager& browserManager, int browserId, con
 
         switch (arg.type)
         {
-            case ArgumentType::Integer: 
-                list->SetInt(idx, arg.intValue); 
+            case ArgumentType::Integer:
+                list->SetInt(idx, arg.intValue);
                 break;
-            case ArgumentType::Float:   
-                list->SetDouble(idx, arg.floatValue); 
+
+            case ArgumentType::Float:
+                list->SetDouble(idx, arg.floatValue);
                 break;
-            case ArgumentType::Bool:    
-                list->SetBool(idx, arg.boolValue); 
+
+            case ArgumentType::Bool:
+                list->SetBool(idx, arg.boolValue);
                 break;
-            case ArgumentType::String:  
-                list->SetString(idx, EnsureUtf8ForCef(arg.stringValue)); 
+
+            case ArgumentType::String:
+                list->SetString(idx, EnsureUtf8ForCef(arg.stringValue));
                 break;
-            default:                    
-                list->SetNull(idx); 
+
+            default:
+                list->SetNull(idx);
                 break;
         }
     }
 
-    instance->browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
+    frame->SendProcessMessage(PID_RENDERER, msg);
+    return true;
 }
 
 void App::Initialize()

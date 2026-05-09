@@ -68,18 +68,23 @@ void NetworkManager::Shutdown()
 void NetworkManager::Connect(int playerid)
 {
     LOG_INFO("[CLIENT] Connect() called with playerid={}", playerid);
-    LOG_DEBUG("[CLIENT] Current state={}, non_cef_server={}", (int)state_.load(), non_cef_server_.load());
-    
-    if (state_ != ConnectionState::DISCONNECTED) {
+
+    ConnectionState expected = ConnectionState::DISCONNECTED;
+    if (!state_.compare_exchange_strong(expected, ConnectionState::SENDING_JOIN, std::memory_order_acq_rel, std::memory_order_acquire))
+    {
         LOG_WARN("[CLIENT] Connect() rejected: already in state {}", (int)state_.load());
         return;
     }
 
+    LOG_DEBUG("[CLIENT] Current non_cef_server={}", non_cef_server_.load());
+
 	if (non_cef_server_.load())
+    {
+        state_.store(ConnectionState::DISCONNECTED, std::memory_order_release);
 		return;
+    }
 
 	playerid_ = playerid;
-	state_ = ConnectionState::SENDING_JOIN;
 	join_attempts_ = 0;
 
 	LOG_INFO("[CLIENT] Connecting to server for playerid {}...", playerid_);
@@ -118,22 +123,24 @@ void NetworkManager::Connect(int playerid)
 
 void NetworkManager::Disconnect()
 {
-	if (state_ == ConnectionState::DISCONNECTED) 
+    ConnectionState prev = state_.exchange(ConnectionState::DISCONNECTED, std::memory_order_acq_rel);
+	if (prev == ConnectionState::DISCONNECTED)
 		return;
 
 	LOG_INFO("[CLIENT] Disconnecting...");
-
-	state_ = ConnectionState::DISCONNECTED;
 	FireSessionActive(false);
 
 	asio::post(io_context_, [this]() {
 		connect_timer_.cancel();
 		kcp_update_timer_.cancel();
 
-		if (kcp_instance_) {
-			ikcp_release(kcp_instance_);
-			kcp_instance_ = nullptr;
-		}
+        {
+            std::lock_guard<std::mutex> lock(kcp_mutex_);
+            if (kcp_instance_) {
+                ikcp_release(kcp_instance_);
+                kcp_instance_ = nullptr;
+            }
+        }
 
 		if (socket_.is_open()) socket_.close();
 	});
@@ -260,10 +267,13 @@ void NetworkManager::HandleRawMessage(const char* data, size_t len)
 			non_cef_server_.store(false);
 			FireSessionActive(true);
 
-			kcp_instance_ = ikcp_create(response.kcp_conv_id, this);
-			kcp_instance_->output = kcp_client_output_callback;
-			ikcp_nodelay(kcp_instance_, 1, 10, 2, 1);
-			ikcp_wndsize(kcp_instance_, 128, 128);
+			{
+				std::lock_guard<std::mutex> lock(kcp_mutex_);
+				kcp_instance_ = ikcp_create(response.kcp_conv_id, this);
+				kcp_instance_->output = kcp_client_output_callback;
+				ikcp_nodelay(kcp_instance_, 1, 10, 2, 1);
+				ikcp_wndsize(kcp_instance_, 128, 128);
+			}
 
 			if (rx_key_.empty() || tx_key_.empty()) {
 				LOG_ERROR("[CLIENT] Session keys not initialized!");
@@ -349,7 +359,6 @@ void NetworkManager::SendPacket(PacketType type, const PacketPayload& payload)
 	}
 
 	std::lock_guard<std::mutex> lock(kcp_mutex_);
-
 
 	if (kcp_instance_ && state_ == ConnectionState::CONNECTED) {
 		if (tx_key_.empty()) {

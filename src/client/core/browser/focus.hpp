@@ -26,6 +26,8 @@ public:
 
     int GetInputFocusedBrowserId() const { return input_focused_browser_id_.load(); }
     bool IsTextInputFocused(int browserId) const { return input_focused_browser_id_.load() == browserId; }
+
+    void RequestResync() { force_resync_.store(true); }
 private:
     BrowserManager& manager_;
 
@@ -37,4 +39,6 @@ private:
 
     std::atomic<bool> chat_input_enabled_{ true };
     std::atomic<bool> chat_input_open_{ false };
+
+    std::atomic<bool> force_resync_{ false };
 };

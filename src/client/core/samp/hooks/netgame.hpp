@@ -14,6 +14,8 @@ public:
     void SetSessionActive(bool active);
     bool IsSessionActive() const { return session_active_.load(); }
 
+    std::function<void()> OnProcessGameStuffTick;
+
 private:
     using FnProcessGameStuff = void(__thiscall*)(void*);
     static void __fastcall Hook_ProcessGameStuff(void* pThis, void* _edx);

@@ -75,13 +75,15 @@ void __fastcall NetGameHook::Hook_ProcessGameStuff(void* pThis, void* /*_edx*/)
     if (!s_self_ || !s_orig_)
         return;
 
+    s_orig_(pThis);
+
+    if (!s_self_->session_active_.load())
+        return;
+
     const auto state = s_self_->resources_.GetState();
 
-    if (!s_self_->session_active_.load() || state == DownloadState::IDLE)
-    {
-        s_orig_(pThis);
+    if (state == DownloadState::IDLE)
         return;
-    }
 
     if (!s_self_->cef_download_triggered_ && state == DownloadState::AWAITING_TRIGGER)
     {
@@ -92,5 +94,6 @@ void __fastcall NetGameHook::Hook_ProcessGameStuff(void* pThis, void* /*_edx*/)
     if (state != DownloadState::COMPLETED)
         return;
 
-    s_orig_(pThis);
+    if (s_self_->OnProcessGameStuffTick)
+        s_self_->OnProcessGameStuffTick();
 }

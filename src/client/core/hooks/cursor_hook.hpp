@@ -53,5 +53,5 @@ private:
     std::atomic<HCURSOR> forced_cursor_      { nullptr };
     std::atomic<DWORD>   last_activate_tick_ { 0 };
 
-    static constexpr DWORD kActivateGraceMs = 500;
+    static constexpr DWORD kActivateGraceMs = 50;
 };

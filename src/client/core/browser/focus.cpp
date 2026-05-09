@@ -11,6 +11,9 @@ void FocusManager::Update()
         return;
 
     const bool is_cef_focused_now = manager_.IsAnyBrowserFocused();
+    const bool force_resync = force_resync_.exchange(false);
+    const bool entered_cef_focus = is_cef_focused_now && !was_cef_focused_last_frame_;
+    const bool left_cef_focus = !is_cef_focused_now && was_cef_focused_last_frame_;
 
     if (is_cef_focused_now)
     {
@@ -20,16 +23,16 @@ void FocusManager::Update()
         const cef_cursor_type_t type = manager_.GetCursorType();
         HCURSOR hCursor = nullptr;
         switch (type) {
-            case CT_POINTER: 
+            case CT_POINTER:
                 hCursor = LoadCursor(nullptr, IDC_ARROW); 
                 break;
-            case CT_IBEAM:   
+            case CT_IBEAM:
                 hCursor = LoadCursor(nullptr, IDC_IBEAM); 
                 break;
-            case CT_HAND:    
+            case CT_HAND:
                 hCursor = LoadCursor(nullptr, IDC_HAND);  
                 break;
-            default:         
+            default:
                 hCursor = LoadCursor(nullptr, IDC_ARROW); 
                 break;
         }
@@ -38,34 +41,27 @@ void FocusManager::Update()
         CursorHook::Instance().SetForced(true);
         ::SetCursor(hCursor);
 
-        if (!was_cef_focused_last_frame_)
+        if (entered_cef_focus || force_resync)
         {
             while (::ShowCursor(TRUE) < 0) {}
         }
     }
-    else if (was_cef_focused_last_frame_)
+    else 
     {
-        CursorHook::Instance().SetForced(false);
+        if (left_cef_focus || force_resync) 
+        {
+            CursorHook::Instance().SetForced(false);
 
-        while (::ShowCursor(FALSE) >= 0) {}
-        ::SetCursor(nullptr);
+            while (::ShowCursor(FALSE) >= 0) {}
+            ::SetCursor(nullptr);
 
-        game->SetCursorMode(CMODE_NONE, TRUE);
-        game->ProcessInputEnabling();
+            game->SetCursorMode(CMODE_NONE, TRUE);
+            game->ProcessInputEnabling();
+        }
     }
 
     was_cef_focused_last_frame_ = is_cef_focused_now;
 }
-
-/*void FocusManager::RestoreGameControls()
-{
-    ShowCursor(FALSE); 
-    SetCursor(nullptr);
-
-    auto* game = GetComponent<GameComponent>();
-    if (game) 
-        game->SetCursorMode(CMODE_NONE, TRUE);
-}*/
 
 void FocusManager::SetInputFocus(int browserId, bool has_focus)
 {

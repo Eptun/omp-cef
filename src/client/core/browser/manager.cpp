@@ -734,6 +734,9 @@ void BrowserManager::DestroyBrowser(int id)
         return;
     }
 
+    player_stats_poll_.erase(id);
+    pending_.erase(id);
+
     auto it = browsers_.find(id);
     if (it == browsers_.end())
         return;
@@ -943,6 +946,8 @@ void BrowserManager::OnBrowserCreated(int id, CefRefPtr<CefBrowser> browser)
 
 void BrowserManager::OnBrowserClosed(int id)
 {
+    player_stats_poll_.erase(id);
+    pending_.erase(id);
     browsers_.erase(id);
 }
 
@@ -1227,6 +1232,25 @@ void BrowserManager::EnableKey(int key, bool enabled)
     LOG_INFO("[CEF] Key {} {}", key, enabled ? "enabled" : "disabled");
 }
 
+void BrowserManager::OnGameFocusLost()
+{
+    if (!CefCurrentlyOn(TID_UI))
+    {
+        CefPostTask(TID_UI, base::BindOnce(&BrowserManager::OnGameFocusLost, base::Unretained(this)));
+        return;
+    }
+
+    auto* focused = GetFocusedBrowser();
+    if (!focused || !focused->browser)
+        return;
+
+    if (auto host = focused->browser->GetHost())
+    {
+        host->SetFocus(false);
+        host->SendCaptureLostEvent();
+    }
+}
+
 void BrowserManager::ExitGame()
 {
     HWND hwnd = gta_.GetHwnd();
@@ -1374,6 +1398,9 @@ LRESULT BrowserManager::OnWndProcMessage(HWND hwnd, UINT msg, WPARAM wParam, LPA
             evt.windows_key_code = static_cast<int>(wParam);
             evt.native_key_code = static_cast<int>(lParam);
             evt.modifiers = GetCefEventFlags();
+
+            if (msg == WM_CHAR && (GetKeyState(VK_RMENU) & 0x8000))
+                evt.modifiers &= ~(EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN);
 
             if (msg == WM_KEYDOWN)
                 evt.type = KEYEVENT_RAWKEYDOWN;

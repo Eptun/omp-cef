@@ -247,12 +247,18 @@ void Runtime::FinalizeInitialization(HWND hwnd)
                 {
                     CursorHook::Instance().OnGameActivated();
 
+                    if (focus_)
+                        focus_->RequestResync();
+
                     cursor_recenter_frames_.store(5, std::memory_order_release);
                 }
                 else
                 {
                     cursor_recenter_frames_.store(0, std::memory_order_release);
                     ::ClipCursor(nullptr);
+
+                    if (browser_)
+                        browser_->OnGameFocusLost();
                 }
 
                 return std::nullopt;
@@ -268,7 +274,7 @@ void Runtime::FinalizeInitialization(HWND hwnd)
 
             if (msg == WM_SETCURSOR)
             {
-                if (browser_ && browser_->IsAnyBrowserFocused())
+                if (browser_ && browser_->IsAnyBrowserFocused() && ::GetForegroundWindow() == h)
                 {
                     ::SetCursor(::LoadCursor(nullptr, IDC_ARROW));
                     return { TRUE };

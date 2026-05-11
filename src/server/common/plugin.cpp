@@ -2,6 +2,7 @@
 
 #include <shared/crypto.hpp>
 
+#include "cef_event_handlers.hpp"
 #include "resource_manager.hpp"
 #include "session.hpp"
 #include "shared/packet-serializer.hpp"
@@ -597,6 +598,9 @@ void CefPlugin::NotifyCefInitialize(std::shared_ptr<NetworkSession> session, boo
     args.emplace_back(reason);
     args.emplace_back(message);
     bridge_->CallPawnPublic("OnCefInitialize", args);
+
+    for (auto* h : GetCefEventHandlers())
+        h->onCefInitialize(session->playerid, success, reason, message.c_str());
 }
 
 void CefPlugin::NotifyCefReady(std::shared_ptr<NetworkSession> session)
@@ -613,6 +617,9 @@ void CefPlugin::NotifyCefReady(std::shared_ptr<NetworkSession> session)
     std::vector<Argument> args;
     args.emplace_back(session->playerid);
     bridge_->CallPawnPublic("OnCefReady", args);
+
+    for (auto* h : GetCefEventHandlers())
+        h->onCefReady(session->playerid);
 }
 
 void CefPlugin::HandleClientEvent(int playerid, const ClientEmitEventPacket& payload)
@@ -627,6 +634,9 @@ void CefPlugin::HandleClientEvent(int playerid, const ClientEmitEventPacket& pay
 			const std::string& reason = payload.args[2].stringValue;
 
 			bridge_->CallOnBrowserCreated(playerid, browserId, success, code, reason);
+
+			for (auto* h : GetCefEventHandlers())
+				h->onCefBrowserCreated(playerid, browserId, success, code, reason.c_str());
 		}
 
 		return;
@@ -635,12 +645,18 @@ void CefPlugin::HandleClientEvent(int playerid, const ClientEmitEventPacket& pay
     if (payload.name == CefEvent::Client::DownloadStart)
 	{
 		bridge_->CallOnDownloadStart(playerid);
+
+		for (auto* h : GetCefEventHandlers())
+			h->onCefDownloadStart(playerid);
 		return;
 	}
 
     if (payload.name == CefEvent::Client::DownloadFinish)
 	{
 		bridge_->CallOnDownloadFinish(playerid);
+
+		for (auto* h : GetCefEventHandlers())
+			h->onCefDownloadFinish(playerid);
 		return;
 	}
 
@@ -655,6 +671,9 @@ void CefPlugin::HandleClientEvent(int playerid, const ClientEmitEventPacket& pay
 			bool repeat = payload.args[4].boolValue;
 
 			bridge_->CallOnPressKey(playerid, key, scancode, modifiers, down, repeat);
+
+			for (auto* h : GetCefEventHandlers())
+				h->onCefPressKey(playerid, key, scancode, modifiers, down, repeat);
 		}
 
 		return;
@@ -674,10 +693,32 @@ void CefPlugin::HandleClientEvent(int playerid, const ClientEmitEventPacket& pay
 			args.emplace_back(playerid);
 			args.emplace_back(open);
 			bridge_->CallPawnPublic("OnCefChatInputState", args);
+
+			for (auto* h : GetCefEventHandlers())
+				h->onCefChatInputState(playerid, open);
 		}
 
 		return;
 	}
+
+    if (!GetCefEventHandlers().empty())
+    {
+        std::vector<CefArg> flatArgs;
+        flatArgs.reserve(payload.args.size());
+        for (const auto& a : payload.args)
+        {
+            CefArg ca{};
+            ca.type = static_cast<CefArgType>(a.type);
+            ca.stringValue = a.stringValue.c_str();
+            ca.intValue = a.intValue;
+            ca.floatValue = a.floatValue;
+            ca.boolValue = a.boolValue;
+            flatArgs.push_back(ca);
+        }
+        for (auto* h : GetCefEventHandlers())
+            h->onCefEvent(playerid, payload.browserId, payload.name.c_str(),
+                static_cast<int>(flatArgs.size()), flatArgs.empty() ? nullptr : flatArgs.data());
+    }
 
     auto it = registered_events_.find(payload.name);
     if (it == registered_events_.end())

@@ -1,5 +1,7 @@
 #include "client.hpp"
 
+#include <vector>
+
 #include <include/wrapper/cef_helpers.h>
 
 #include "browser/audio.hpp"
@@ -129,14 +131,21 @@ void BrowserClient::GetViewRect(CefRefPtr<CefBrowser> /*browser*/, CefRect& rect
 
 void BrowserClient::OnPaint(CefRefPtr<CefBrowser> /*browser*/,
                             PaintElementType type,
-                            const RectList& /*dirtyRects*/,
+                            const RectList& dirtyRects,
                             const void* buffer,
                             int width,
                             int height)
 {
     if (!buffer || type != PET_VIEW)
         return;
-    manager_.OnPaint(browserId_, buffer, width, height);
+
+    std::vector<cef_rect_t> dirty_rects;
+    dirty_rects.reserve(dirtyRects.size());
+
+    for (const auto& rect : dirtyRects)
+        dirty_rects.push_back(cef_rect_t{ rect.x, rect.y, rect.width, rect.height });
+
+    manager_.OnPaint(browserId_, buffer, width, height, dirty_rects.data(), dirty_rects.size());
 }
 
 bool BrowserClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,

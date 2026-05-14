@@ -50,7 +50,7 @@ void View::UpdateTexture(const uint8_t* data, const cef_rect_t* dirtyRects, size
     if (count == 0 || !dirtyRects) 
     {
         LOG_DEBUG("[View] No dirty rects provided, performing full update");
-        wrapper_->Update(data, width_, height_);
+        wrapper_->Update(data, width_, height_, false);
         return;
     }
 
@@ -60,7 +60,7 @@ void View::UpdateTexture(const uint8_t* data, const cef_rect_t* dirtyRects, size
         if (r.width <= 0 || r.height <= 0) 
             continue;
 
-        wrapper_->UpdatePartial(data, width_, height_, r.x, r.y, r.width, r.height);
+        wrapper_->UpdatePartial(data, width_, height_, r.x, r.y, r.width, r.height, false);
     }
 }
 
@@ -69,7 +69,7 @@ void View::OnPaint(const void* buffer, int width, int height)
     if (!wrapper_ || !buffer) 
         return;
 
-    wrapper_->Update(buffer, width, height);
+    wrapper_->Update(buffer, width, height, false);
 }
 
 void View::Draw()

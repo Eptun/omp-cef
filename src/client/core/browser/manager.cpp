@@ -527,37 +527,35 @@ void BrowserManager::CreateBrowserInternal(
     instance->url = url;
     instance->client = BrowserClient::Create(id, *this, audio_, focus_, network_);
     instance->controls_chat_input = controls_chat;
-
-    if (auto* device = RenderManager::Instance().GetDevice())
-    {
-        instance->view.Initialize(device);
-
-        int browser_width = (int)width;
-        int browser_height = (int)height;
-        if (browser_width <= 0 || browser_height <= 0)
-        {
-            float screen_w, screen_h;
-            if (RenderManager::Instance().GetScreenSize(screen_w, screen_h))
-            {
-                browser_width = (int)screen_w;
-                browser_height = (int)screen_h;
-            }
-            else
-            {
-                browser_width = 1280;
-                browser_height = 720;
-            }
-        }
-        browser_width = std::clamp(browser_width, 1, 2560);
-        browser_height = std::clamp(browser_height, 1, 1440);
-        instance->view.Create(browser_width, browser_height);
-    }
-
     browsers_[id] = std::move(instance);
+
+    // The D3D view must be created on the game's render thread. GTA's device is not
+    // created D3DCREATE_MULTITHREADED, so allocating a texture from the CEF UI thread
+    // races the game's rendering and can hang to desktop. PostToMainThread runs the
+    // work inside the Present hook, where the device is valid — which also makes it
+    // naturally wait out any in-progress device reset (no Present happens mid-reset).
+    gta_.PostToMainThread([this, id, width, height]() {
+        auto* inst = GetBrowserInstance(id);
+        if (!inst) return;   // destroyed before we got a frame
+        auto* device = RenderManager::Instance().GetDevice();
+        if (!device) return;
+
+        inst->view.Initialize(device);
+
+        int bw = (int)width, bh = (int)height;
+        if (bw <= 0 || bh <= 0)
+        {
+            float sw, sh;
+            if (RenderManager::Instance().GetScreenSize(sw, sh)) { bw = (int)sw; bh = (int)sh; }
+            else { bw = 1280; bh = 720; }
+        }
+        bw = std::clamp(bw, 1, 2560);
+        bh = std::clamp(bh, 1, 1440);
+        inst->view.Create(bw, bh);
+    });
+
     if (focused)
-    {
         FocusBrowser(id, true);
-    }
 
     CefWindowInfo windowInfo;
     windowInfo.SetAsWindowless(gta_.GetHwnd());
@@ -594,19 +592,24 @@ void BrowserManager::CreateWorldBrowserInternal(
     instance->url = url;
     instance->textureName = textureName;
     instance->client = BrowserClient::Create(id, *this, audio_, focus_, network_);
+    browsers_[id] = std::move(instance);
 
     const int browser_width = std::clamp((int)width, 1, 1024);
     const int browser_height = std::clamp((int)height, 1, 1024);
 
-    worldRenderers_[id] = std::make_unique<WorldRenderer>(textureName, (float)browser_width, (float)browser_height);
+    // Both the WorldRenderer and the view allocate D3D textures, so create them on the
+    // game's render thread (see CreateBrowserInternal) to avoid the non-multithreaded
+    // device race that can hang to desktop. Runs once the device is present-able.
+    gta_.PostToMainThread([this, id, textureName, browser_width, browser_height]() {
+        auto* inst = GetBrowserInstance(id);
+        if (!inst) return;
+        auto* device = RenderManager::Instance().GetDevice();
+        if (!device) return;
 
-    if (auto* device = RenderManager::Instance().GetDevice())
-    {
-        instance->view.Initialize(device);
-        instance->view.Create(browser_width, browser_height);
-    }
-
-    browsers_[id] = std::move(instance);
+        worldRenderers_[id] = std::make_unique<WorldRenderer>(textureName, (float)browser_width, (float)browser_height);
+        inst->view.Initialize(device);
+        inst->view.Create(browser_width, browser_height);
+    });
 
     // Prepare audio stream but keep it muted until attached to a world entity
     audio_.EnsureStream(id);
@@ -658,18 +661,20 @@ void BrowserManager::CreateWorld2DBrowserInternal(
     instance->world2d.offsetZ = offsetZ;
     instance->world2d.pivotX = pivotX;
     instance->world2d.pivotY = pivotY;
-
-    if (auto* device = RenderManager::Instance().GetDevice())
-    {
-        instance->view.Initialize(device);
-
-        int browser_width = std::clamp((int)width, 1, 1024);
-        int browser_height = std::clamp((int)height, 1, 1024);
-
-        instance->view.Create(browser_width, browser_height);
-    }
-
     browsers_[id] = std::move(instance);
+
+    // Create the D3D view on the game's render thread (see CreateBrowserInternal).
+    gta_.PostToMainThread([this, id, width, height]() {
+        auto* inst = GetBrowserInstance(id);
+        if (!inst) return;
+        auto* device = RenderManager::Instance().GetDevice();
+        if (!device) return;
+
+        inst->view.Initialize(device);
+        int bw = std::clamp((int)width, 1, 1024);
+        int bh = std::clamp((int)height, 1, 1024);
+        inst->view.Create(bw, bh);
+    });
 
     CefWindowInfo windowInfo;
     windowInfo.SetAsWindowless(gta_.GetHwnd());

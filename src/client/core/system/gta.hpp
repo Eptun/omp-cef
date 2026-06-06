@@ -21,6 +21,10 @@ public:
     void Shutdown();
     void PumpMainThreadCallbacks();
 
+    // Queue work to run on the game's render/main thread (drained in the Present hook).
+    // Use this for any D3D device access from other threads (e.g. the CEF UI thread).
+    void PostToMainThread(std::function<void()> fn);
+
     std::string GetUserFilesPath();
 
     HWND GetHwnd() const { return hwnd_.load(std::memory_order_acquire); }
@@ -36,8 +40,6 @@ private:
 
     void SearchThreadLoop();
     void OnHwndDiscovered(HWND hwnd);
-
-    void PostToMainThread(std::function<void()> fn);
 
     struct SearchData { DWORD pid; HWND result; };
 

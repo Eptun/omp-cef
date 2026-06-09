@@ -1,5 +1,9 @@
 #pragma once
 
+#include <functional>
+#include <mutex>
+#include <vector>
+
 #include <Server/Components/Pawn/pawn.hpp>
 #include "common/bridge.hpp"
 
@@ -25,7 +29,15 @@ public:
     void KickPlayer(int playerid) override;
     bool IsPlayerNpcBot(int playerid) override;
 
+    void ProcessPending() override;   // drain queued calls on the main thread
+
 private:
+    void Enqueue(std::function<void()> fn);
+    void InvokePawnPublic(const std::string& name, const std::vector<Argument>& args);
+
     ICore* core_;
     IPawnComponent* pawn_;
+
+    std::mutex queue_mutex_;
+    std::vector<std::function<void()>> pending_;
 };

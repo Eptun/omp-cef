@@ -33,7 +33,32 @@ void OmpPlatformBridge::LogDebug(const std::string& message)
         core_->printLn("[CEF] [DEBUG] %s", message.c_str());
 }
 
+void OmpPlatformBridge::Enqueue(std::function<void()> fn)
+{
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    pending_.push_back(std::move(fn));
+}
+
+void OmpPlatformBridge::ProcessPending()
+{
+    std::vector<std::function<void()>> local;
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        if (pending_.empty())
+            return;
+        local.swap(pending_);
+    }
+    for (auto& fn : local)
+        fn();
+}
+
 void OmpPlatformBridge::CallPawnPublic(const std::string& name, const std::vector<Argument>& args)
+{
+    // Queued — invoked on the main thread in ProcessPending (PAWN isn't thread-safe).
+    Enqueue([this, name, args]() { InvokePawnPublic(name, args); });
+}
+
+void OmpPlatformBridge::InvokePawnPublic(const std::string& name, const std::vector<Argument>& args)
 {
     if (!pawn_)
         return;
@@ -84,74 +109,48 @@ void OmpPlatformBridge::CallPawnPublic(const std::string& name, const std::vecto
 
 void OmpPlatformBridge::CallOnBrowserCreated(int playerid, int browserId, bool success, int code, const std::string& reason)
 {
-    if (!pawn_) 
-        return;
-
-    auto call = [&](IPawnScript* script) {
-        if (!script) 
-            return;
-
-        script->Call("OnCefBrowserCreated", DefaultReturnValue_False, playerid, browserId, success, code, StringView(reason));
-    };
-
-    call(pawn_->mainScript());
-    for (IPawnScript* script : pawn_->sideScripts()) {
-        call(script);
-    }
+    Enqueue([this, playerid, browserId, success, code, reason]() {
+        if (!pawn_) return;
+        auto call = [&](IPawnScript* script) {
+            if (script)
+                script->Call("OnCefBrowserCreated", DefaultReturnValue_False, playerid, browserId, success, code, StringView(reason));
+        };
+        call(pawn_->mainScript());
+        for (IPawnScript* script : pawn_->sideScripts()) call(script);
+    });
 }
 
 void OmpPlatformBridge::CallOnDownloadStart(int playerid)
 {
-    if (!pawn_) 
-        return;
-
-    auto call = [&](IPawnScript* script) {
-        if (!script) 
-            return;
-
-        script->Call("OnCefDownloadStart", DefaultReturnValue_True, playerid);
-    };
-
-    call(pawn_->mainScript());
-    for (IPawnScript* script : pawn_->sideScripts()) {
-        call(script);
-    }
+    Enqueue([this, playerid]() {
+        if (!pawn_) return;
+        auto call = [&](IPawnScript* script) { if (script) script->Call("OnCefDownloadStart", DefaultReturnValue_True, playerid); };
+        call(pawn_->mainScript());
+        for (IPawnScript* script : pawn_->sideScripts()) call(script);
+    });
 }
 
 void OmpPlatformBridge::CallOnDownloadFinish(int playerid)
 {
-    if (!pawn_) 
-        return;
-
-    auto call = [&](IPawnScript* script) {
-        if (!script) 
-            return;
-
-        script->Call("OnCefDownloadFinish", DefaultReturnValue_True, playerid);
-    };
-
-    call(pawn_->mainScript());
-    for (IPawnScript* script : pawn_->sideScripts()) {
-        call(script);
-    }
+    Enqueue([this, playerid]() {
+        if (!pawn_) return;
+        auto call = [&](IPawnScript* script) { if (script) script->Call("OnCefDownloadFinish", DefaultReturnValue_True, playerid); };
+        call(pawn_->mainScript());
+        for (IPawnScript* script : pawn_->sideScripts()) call(script);
+    });
 }
 
 void OmpPlatformBridge::CallOnPressKey(int playerid, int key, int scancode, int modifiers, bool down, bool repeat)
 {
-    if (!pawn_) 
-        return;
-
-    auto call = [&](IPawnScript* script) {
-        if (!script) 
-            return;
-
-        script->Call("OnCefPressKey", DefaultReturnValue_True, playerid, key, scancode, modifiers, down, repeat);
-    };
-
-    call(pawn_->mainScript());
-    for (IPawnScript* script : pawn_->sideScripts()) {
-        call(script);
-    }
+    Enqueue([this, playerid, key, scancode, modifiers, down, repeat]() {
+        if (!pawn_) return;
+        auto call = [&](IPawnScript* script) {
+            if (script)
+                script->Call("OnCefPressKey", DefaultReturnValue_True, playerid, key, scancode, modifiers, down, repeat);
+        };
+        call(pawn_->mainScript());
+        for (IPawnScript* script : pawn_->sideScripts()) call(script);
+    });
 }
 
 std::string OmpPlatformBridge::GetPlayerAddressIp(int playerid)

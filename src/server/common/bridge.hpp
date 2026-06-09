@@ -22,4 +22,8 @@ public:
     virtual std::string GetPlayerAddressIp(int playerid) = 0;
     virtual void KickPlayer(int playerid) = 0;
     virtual bool IsPlayerNpcBot(int playerid) = 0;
+
+    // Drain PAWN callbacks queued from the network thread. MUST be called on the main
+    // (server) thread — PAWN/native execution is not thread-safe.
+    virtual void ProcessPending() = 0;
 };

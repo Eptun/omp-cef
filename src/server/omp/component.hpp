@@ -2,6 +2,7 @@
 
 #include "Server/Components/Pawn/pawn.hpp"
 #include "common/plugin.hpp"
+#include "common/bridge.hpp"
 
 struct ICefOmpComponent : IComponent
 {
@@ -10,7 +11,8 @@ struct ICefOmpComponent : IComponent
 
 class CefOmpComponent final : public ICefOmpComponent,
                               public PawnEventHandler,
-                              public PlayerConnectEventHandler
+                              public PlayerConnectEventHandler,
+                              public CoreEventHandler
 {
 public:
     StringView componentName() const override;
@@ -35,6 +37,8 @@ public:
     void onPlayerClientInit(IPlayer& player) override;
     void onPlayerDisconnect(IPlayer& player, PeerDisconnectReason reason) override;
 
+    void onTick(Microseconds elapsed, TimePoint now) override;   // drains queued CEF callbacks
+
 private:
     static constexpr uint16_t cef_network_port_offset = 2;
 
@@ -43,6 +47,7 @@ private:
     IPawnComponent* pawn_;
 
     std::unique_ptr<CefPlugin> plugin_;
+    IPlatformBridge* bridge_ = nullptr;   // owned by plugin_; for main-thread queue drain
 
     bool debug_enabled_ = false;
     std::vector<uint8_t> master_resource_key_;

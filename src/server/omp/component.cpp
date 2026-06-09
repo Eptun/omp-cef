@@ -42,9 +42,21 @@ void CefOmpComponent::onInit(IComponentList* components)
     options.resources_loader_ui = resources_loader_ui_;
 
     auto bridge = CreateOmpPlatformBridge(core_, pawn_);
+    bridge_ = bridge.get();   // plugin_ owns it; kept for the main-thread queue drain
     plugin_->Initialize(std::move(bridge), cef_network_port_, options);
 
+    // CEF events arrive on the network thread; drain the queued PAWN callbacks here,
+    // on the main (server) thread, where PAWN/native execution is safe.
+    if (core_)
+        core_->getEventDispatcher().addEventHandler(this);
+
     LOG_INFO("Component initialized (v%d.%d.%d).", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+}
+
+void CefOmpComponent::onTick(Microseconds elapsed, TimePoint now)
+{
+    if (bridge_)
+        bridge_->ProcessPending();
 }
 
 void CefOmpComponent::onReady() {}
@@ -155,5 +167,7 @@ CefOmpComponent::~CefOmpComponent()
     if (core_)
     {
         core_->getPlayers().getPlayerConnectDispatcher().removeEventHandler(this);
+        core_->getEventDispatcher().removeEventHandler(this);
     }
+    bridge_ = nullptr;
 }

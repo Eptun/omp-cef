@@ -1531,11 +1531,19 @@ void BrowserManager::TickGameData()
         if (current.heading >= 360.f) current.heading = std::fmod(current.heading, 360.f);
     }
 
-    // Camera heading (deg)
+    // Camera heading (deg). Use the horizontal camera->player bearing (the orbit
+    // direction) rather than the forward vector: the forward vector's horizontal part
+    // collapses and its sign flips when the camera looks steeply up or down, which made
+    // the value (and anything driven by it, e.g. a rotating radar) snap 180 degrees.
     {
-        const CVector& fwd = TheCamera.m_mCameraMatrix.at;
+        const CVector& camPos = TheCamera.m_mCameraMatrix.pos;
+        float dx = current.x - camPos.x;
+        float dy = current.y - camPos.y;
 
-        float camRad = std::atan2(fwd.x, fwd.y);
+        // Fall back to the forward vector only if the camera sits on top of the player.
+        float camRad = (dx * dx + dy * dy > 1e-4f)
+            ? std::atan2(dx, dy)
+            : std::atan2(TheCamera.m_mCameraMatrix.at.x, TheCamera.m_mCameraMatrix.at.y);
         float camDeg = camRad * (180.0f / 3.14159265f);
 
         current.camera_heading = NormalizeDeg(camDeg);

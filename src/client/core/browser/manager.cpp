@@ -557,8 +557,18 @@ void BrowserManager::CreateBrowserInternal(
             }
         }
 
-        browser_width = std::clamp(browser_width, 1, 2560);
-        browser_height = std::clamp(browser_height, 1, 1440);
+        D3DCAPS9 caps{};
+        int maxTextureWidth = 7680; // 8k
+        int maxTextureHeight = 4320;
+
+        if (SUCCEEDED(device->GetDeviceCaps(&caps)))
+        {
+            maxTextureWidth = std::clamp(static_cast<int>(caps.MaxTextureWidth), 1, maxTextureWidth);
+            maxTextureHeight = std::clamp(static_cast<int>(caps.MaxTextureHeight), 1, maxTextureHeight);
+        }
+
+        browser_width = std::clamp(browser_width, 1, maxTextureWidth);
+        browser_height = std::clamp(browser_height, 1, maxTextureHeight);
         inst->view.Create(browser_width, browser_height);
     });
 

@@ -528,36 +528,42 @@ void BrowserManager::CreateBrowserInternal(
     instance->client = BrowserClient::Create(id, *this, audio_, focus_, network_);
     instance->controls_chat_input = controls_chat;
 
-    if (auto* device = RenderManager::Instance().GetDevice())
-    {
-        instance->view.Initialize(device);
+    browsers_[id] = std::move(instance);
 
-        int browser_width = (int)width;
+    gta_.PostToMainThread([this, id, width, height]() {
+        auto* inst = GetBrowserInstance(id);
+        if (!inst) return;
+
+        auto* device = RenderManager::Instance().GetDevice();
+        if (!device) return;
+
+        inst->view.Initialize(device);
+
+        int browser_width  = (int)width;
         int browser_height = (int)height;
-        if (browser_width <= 0 || browser_height <= 0)
+
+        if (browser_width  <= 0 || browser_height <= 0)
         {
-            float screen_w, screen_h;
-            if (RenderManager::Instance().GetScreenSize(screen_w, screen_h))
+            float screen_width, screen_height;
+            if (RenderManager::Instance().GetScreenSize(screen_width, screen_height))
             {
-                browser_width = (int)screen_w;
-                browser_height = (int)screen_h;
+                browser_width  = (int)screen_width;
+                browser_height = (int)screen_height;
             }
             else
             {
-                browser_width = 1280;
+                browser_width  = 1280;
                 browser_height = 720;
             }
         }
+
         browser_width = std::clamp(browser_width, 1, 2560);
         browser_height = std::clamp(browser_height, 1, 1440);
-        instance->view.Create(browser_width, browser_height);
-    }
+        inst->view.Create(browser_width, browser_height);
+    });
 
-    browsers_[id] = std::move(instance);
     if (focused)
-    {
         FocusBrowser(id, true);
-    }
 
     CefWindowInfo windowInfo;
     windowInfo.SetAsWindowless(gta_.GetHwnd());
@@ -594,19 +600,22 @@ void BrowserManager::CreateWorldBrowserInternal(
     instance->url = url;
     instance->textureName = textureName;
     instance->client = BrowserClient::Create(id, *this, audio_, focus_, network_);
+    browsers_[id] = std::move(instance);
 
     const int browser_width = std::clamp((int)width, 1, 1024);
     const int browser_height = std::clamp((int)height, 1, 1024);
 
-    worldRenderers_[id] = std::make_unique<WorldRenderer>(textureName, (float)browser_width, (float)browser_height);
+    gta_.PostToMainThread([this, id, textureName, browser_width, browser_height]() {
+        auto* inst = GetBrowserInstance(id);
+        if (!inst) return;
 
-    if (auto* device = RenderManager::Instance().GetDevice())
-    {
-        instance->view.Initialize(device);
-        instance->view.Create(browser_width, browser_height);
-    }
+        auto* device = RenderManager::Instance().GetDevice();
+        if (!device) return;
 
-    browsers_[id] = std::move(instance);
+        worldRenderers_[id] = std::make_unique<WorldRenderer>(textureName, (float)browser_width, (float)browser_height);
+        inst->view.Initialize(device);
+        inst->view.Create(browser_width, browser_height);
+    });
 
     // Prepare audio stream but keep it muted until attached to a world entity
     audio_.EnsureStream(id);
@@ -658,18 +667,21 @@ void BrowserManager::CreateWorld2DBrowserInternal(
     instance->world2d.offsetZ = offsetZ;
     instance->world2d.pivotX = pivotX;
     instance->world2d.pivotY = pivotY;
-
-    if (auto* device = RenderManager::Instance().GetDevice())
-    {
-        instance->view.Initialize(device);
-
-        int browser_width = std::clamp((int)width, 1, 1024);
-        int browser_height = std::clamp((int)height, 1, 1024);
-
-        instance->view.Create(browser_width, browser_height);
-    }
-
     browsers_[id] = std::move(instance);
+
+    gta_.PostToMainThread([this, id, width, height]() {
+        auto* inst = GetBrowserInstance(id);
+        if (!inst) return;
+
+        auto* device = RenderManager::Instance().GetDevice();
+        if (!device) return;
+
+        inst->view.Initialize(device);
+
+        int bw = std::clamp((int)width, 1, 1024);
+        int bh = std::clamp((int)height, 1, 1024);
+        inst->view.Create(bw, bh);
+    });
 
     CefWindowInfo windowInfo;
     windowInfo.SetAsWindowless(gta_.GetHwnd());

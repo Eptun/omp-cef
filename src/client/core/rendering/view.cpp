@@ -80,6 +80,12 @@ void View::Draw()
     wrapper_->Draw(posX_, posY_);
 }
 
+void View::Clear()
+{
+    if (wrapper_)
+        wrapper_->Clear();
+}
+
 cef_rect_t View::rect() const
 {
     cef_rect_t rc{0,0, std::max(1, width_), std::max(1, height_)};

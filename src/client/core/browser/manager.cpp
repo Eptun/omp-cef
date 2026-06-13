@@ -987,6 +987,12 @@ void BrowserManager::ClearPendingPaint(int id)
     pending_paint.tick = 0;
 }
 
+void BrowserManager::RequestTextureClear(int id)
+{
+    if (auto* instance = GetBrowserInstance(id))
+        instance->clear_texture.store(true, std::memory_order_release);
+}
+
 void BrowserManager::OnPaint(int id, const void* buffer, int width, int height, const cef_rect_t* dirtyRects, size_t dirtyRectCount)
 {
     if (isCefUpdatesPaused_ || !buffer || width <= 0 || height <= 0)
@@ -1103,6 +1109,22 @@ bool BrowserManager::RenderAll()
     {
         if (!inst)
             continue;
+
+        if (inst->clear_texture.exchange(false, std::memory_order_acq_rel))
+        {
+            ClearPendingPaint(id);
+
+            if (inst->mode == RenderMode::WorldObject3D)
+            {
+                auto world_renderer = worldRenderers_.find(id);
+                if (world_renderer != worldRenderers_.end() && world_renderer->second)
+                    world_renderer->second->Clear();
+            }
+            else
+            {
+                inst->view.Clear();
+            }
+        }
 
         if (!inst->visible)
         {

@@ -29,6 +29,12 @@ static inline bool Contains(const std::string& haystack, const std::string& need
     return haystack.find(needle) != std::string::npos;
 }
 
+static inline std::string StripFragment(const std::string& url)
+{
+    const auto pos = url.find('#');
+    return pos == std::string::npos ? url : url.substr(0, pos);
+}
+
 // Detect if URL points to a site that needs Referer/Origin help (YouTube/Twitch).
 static inline bool IsVideoSiteUrl(const std::string& url)
 {
@@ -244,6 +250,13 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
         bool user_gesture,
         bool is_redirect){
     const std::string url = request->GetURL().ToString();
+
+    if (frame && frame->IsMain() &&
+        StripFragment(frame->GetURL().ToString()) != StripFragment(url))
+    {
+        manager_.RequestTextureClear(browserId_);
+    }
+
     if (!IsVideoSiteUrl(url)) 
         return false;
 

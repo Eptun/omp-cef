@@ -72,6 +72,8 @@ struct BrowserInstance
     bool controls_chat_input = true;
     bool closing = false;
 
+    std::atomic<bool> clear_texture{ false };
+
     bool devtools_requested = false;
     bool devtools_open = false;
     CefRefPtr<CefClient> devtools_client;
@@ -154,6 +156,8 @@ public:
     void OnBrowserCreated(int id, CefRefPtr<CefBrowser> browser);
     void OnBrowserClosed(int id);
     void OnPaint(int id, const void* buffer, int w, int h, const cef_rect_t* dirtyRects, size_t dirtyRectCount);
+
+    void RequestTextureClear(int id);
 
     bool RenderAll();
     LRESULT OnWndProcMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

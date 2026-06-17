@@ -1123,7 +1123,6 @@ bool BrowserManager::RenderAll()
     return any_visible;
 }
 
-
 void BrowserManager::OnBeforeEntityRender(CEntity* entity)
 {
     if (ShouldSkipBrowserRendering())
@@ -1132,12 +1131,18 @@ void BrowserManager::OnBeforeEntityRender(CEntity* entity)
     auto it = entityToBrowserId_.find(entity);
     if (it == entityToBrowserId_.end())
         return;
-    int browserId = it->second;
+
+    const int browserId = it->second;
+
+    auto* browser = GetBrowserInstance(browserId);
+    if (!browser || !browser->visible)
+        return;
+
     auto wrIt = worldRenderers_.find(browserId);
-    if (wrIt != worldRenderers_.end())
-    {
-        wrIt->second->SwapTexture(entity);
-    }
+    if (wrIt == worldRenderers_.end() || !wrIt->second)
+        return;
+
+    wrIt->second->SwapTexture(entity);
 }
 
 void BrowserManager::OnAfterEntityRender(CEntity* entity)

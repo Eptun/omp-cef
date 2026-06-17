@@ -1,9 +1,11 @@
 # omp-cef
 
-![Version](https://img.shields.io/github/v/release/aurora-mp/omp-cef?include_prereleases)
+![Version](https://img.shields.io/github/v/release/aurora-mp/omp-cef?include_prereleases&label=version)
 ![License](https://img.shields.io/github/license/aurora-mp/omp-cef)
-![Issues](https://img.shields.io/github/issues/aurora-mp/omp-cef)
-![Pull Requests](https://img.shields.io/github/issues-pr/aurora-mp/omp-cef)
+[![Wiki](https://img.shields.io/badge/docs-wiki-blue)](https://github.com/aurora-mp/omp-cef/wiki)
+![CEF](https://img.shields.io/badge/CEF-148.0.10-blue)
+![SA--MP](https://img.shields.io/badge/SA--MP-0.3.7%20%7C%200.3.DL-orange)
+![open.mp](https://img.shields.io/badge/open.mp-supported-brightgreen)
 
 Client/server CEF plugin for **open.mp** and **SA-MP**.
 

@@ -14,6 +14,8 @@ public:
     // Push new pixels from CEF into the texture
     void OnPaint(const void* buffer, int width, int height);
 
+    void Clear();
+
     // Swap matching materials' textures to our browser texture before draw
     void SwapTexture(CEntity* entity);
 

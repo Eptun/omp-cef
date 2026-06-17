@@ -19,9 +19,11 @@ public:
     ViewTexture(LPDIRECT3DDEVICE9 device, int width, int height);
 
     bool Create(LPDIRECT3DDEVICE9 device, int width, int height);
-    void Update(const void* pixels, int width, int height);
-    void UpdatePartial(const void* pixels, int bufferWidth, int bufferHeight, int x, int y, int width, int height);
+    void Update(const void* pixels, int width, int height, bool updateRwRaster = true);
+    void UpdatePartial(const void* pixels, int bufferWidth, int bufferHeight, int x, int y, int width, int height, bool updateRwRaster = true);
     void Draw(int x, int y);
+
+    void Clear();
 
     LPDIRECT3DTEXTURE9 GetD3DTexture() const { return texture_; }
     RwTexture* GetRwTexture() { return rwTexture_; }

@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 #include "client.hpp"
 #include "escape_menu.hpp"
@@ -72,6 +73,8 @@ struct BrowserInstance
     bool controls_chat_input = true;
     bool closing = false;
 
+    std::atomic<bool> clear_texture{ false };
+
     bool devtools_requested = false;
     bool devtools_open = false;
     CefRefPtr<CefClient> devtools_client;
@@ -84,6 +87,7 @@ struct PendingPaint
 {
     std::mutex mutex;
     std::vector<uint8_t> pixels;
+    std::vector<cef_rect_t> dirty_rects;
     int width = 0;
     int height = 0;
     bool ready = false;
@@ -155,7 +159,9 @@ public:
     // Callbacks from BrowserClient
     void OnBrowserCreated(int id, CefRefPtr<CefBrowser> browser);
     void OnBrowserClosed(int id);
-    void OnPaint(int id, const void* buffer, int w, int h);
+    void OnPaint(int id, const void* buffer, int w, int h, const cef_rect_t* dirtyRects, size_t dirtyRectCount);
+
+    void RequestTextureClear(int id);
 
     bool RenderAll();
     LRESULT OnWndProcMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -196,6 +202,9 @@ private:
     void EmitCustomEscapeMenuVisibility();
 
     CEntity* GetEntityFromObjectId(int objectId);
+    void ClearPendingPaint(int id);
+    void SendExternalBeginFrames();
+    void DispatchExternalBeginFramesOnUi();
 
 private:
     bool initialized_ = false;
@@ -222,6 +231,7 @@ private:
     std::function<CEntity*(int)> entity_resolver_{};
 
     std::unordered_map<int, PendingPaint> pending_;
+    std::atomic<bool> begin_frame_task_pending_{false};
 
     // Keyboard capture / filtering (client -> server)
     bool key_capture_enabled_ = false;

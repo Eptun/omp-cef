@@ -26,7 +26,6 @@
 
 static void ConfigureBrowserSettings(CefBrowserSettings& settings)
 {
-    settings.windowless_frame_rate = 60;
     settings.javascript = STATE_ENABLED;
     settings.javascript_access_clipboard = STATE_ENABLED;
     settings.javascript_dom_paste = STATE_ENABLED;
@@ -577,6 +576,7 @@ void BrowserManager::CreateBrowserInternal(
 
     CefWindowInfo windowInfo;
     windowInfo.SetAsWindowless(gta_.GetHwnd());
+    windowInfo.external_begin_frame_enabled = true;
     CefBrowserSettings bs;
     ConfigureBrowserSettings(bs);
     CefBrowserHost::CreateBrowser(
@@ -633,6 +633,7 @@ void BrowserManager::CreateWorldBrowserInternal(
 
     CefWindowInfo windowInfo;
     windowInfo.SetAsWindowless(gta_.GetHwnd());
+    windowInfo.external_begin_frame_enabled = true;
     CefBrowserSettings bs;
     ConfigureBrowserSettings(bs);
     CefBrowserHost::CreateBrowser(windowInfo, browsers_[id]->client, url, bs, nullptr, CefRequestContext::GetGlobalContext());
@@ -695,6 +696,7 @@ void BrowserManager::CreateWorld2DBrowserInternal(
 
     CefWindowInfo windowInfo;
     windowInfo.SetAsWindowless(gta_.GetHwnd());
+    windowInfo.external_begin_frame_enabled = true;
     CefBrowserSettings bs;
     ConfigureBrowserSettings(bs);
     CefBrowserHost::CreateBrowser(windowInfo, browsers_[id]->client, url, bs, nullptr, CefRequestContext::GetGlobalContext());
@@ -743,9 +745,27 @@ void BrowserManager::SetBrowserVisible(int id, bool visible)
 
     instance->visible = visible;
 
-    // If we hide a focused browser, drop focus to avoid stuck input.
-    if (!visible && focusedBrowserId_ == id)
-        FocusBrowser(id, false);
+    if (instance->browser)
+    {
+        if (auto host = instance->browser->GetHost())
+        {
+            host->WasHidden(!visible);
+
+            if (visible)
+            {
+                host->WasResized();
+                host->Invalidate(PET_VIEW);
+            }
+        }
+    }
+
+    if (!visible)
+    {
+        ClearPendingPaint(id);
+
+        if (focusedBrowserId_ == id)
+            FocusBrowser(id, false);
+    }
 }
 
 void BrowserManager::DestroyBrowser(int id)
@@ -1000,25 +1020,130 @@ void BrowserManager::OnBrowserClosed(int id)
     browsers_.erase(id);
 }
 
-void BrowserManager::OnPaint(int id, const void* buffer, int width, int height)
+void BrowserManager::ClearPendingPaint(int id)
 {
-    if (isCefUpdatesPaused_ || !buffer)
+    auto it = pending_.find(id);
+    if (it == pending_.end())
+        return;
+
+    auto& pending_paint = it->second;
+    std::lock_guard<std::mutex> lock(pending_paint.mutex);
+    pending_paint.pixels.clear();
+    pending_paint.dirty_rects.clear();
+    pending_paint.width = 0;
+    pending_paint.height = 0;
+    pending_paint.ready = false;
+    pending_paint.tick = 0;
+}
+
+void BrowserManager::RequestTextureClear(int id)
+{
+    if (auto* instance = GetBrowserInstance(id))
+        instance->clear_texture.store(true, std::memory_order_release);
+}
+
+void BrowserManager::OnPaint(int id, const void* buffer, int width, int height, const cef_rect_t* dirtyRects, size_t dirtyRectCount)
+{
+    if (isCefUpdatesPaused_ || !buffer || width <= 0 || height <= 0)
         return;
 
     auto* instance = GetBrowserInstance(id);
     if (!instance)
         return;
 
+    if (!instance->visible)
+    {
+        ClearPendingPaint(id);
+        return;
+    }
+
     auto& pending_paint = pending_[id];
     {
         std::lock_guard<std::mutex> lock(pending_paint.mutex);
+        const size_t buffer_size = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+        const bool use_dirty_rects = instance->mode == RenderMode::Overlay2D && dirtyRects && dirtyRectCount > 0;
+        const bool size_changed = pending_paint.width != width || pending_paint.height != height || pending_paint.pixels.size() != buffer_size;
+
         pending_paint.width = width;
         pending_paint.height = height;
-        pending_paint.pixels.resize((size_t)width * (size_t)height * 4);
-        std::memcpy(pending_paint.pixels.data(), buffer, pending_paint.pixels.size());
+
+        if (size_changed || !use_dirty_rects)
+        {
+            pending_paint.pixels.resize(buffer_size);
+            std::memcpy(pending_paint.pixels.data(), buffer, buffer_size);
+            pending_paint.dirty_rects.clear();
+        }
+        else
+        {
+            const auto* source = static_cast<const uint8_t*>(buffer);
+            auto* target = pending_paint.pixels.data();
+            const bool full_update_pending = pending_paint.ready && pending_paint.dirty_rects.empty();
+
+            pending_paint.dirty_rects.reserve(pending_paint.dirty_rects.size() + dirtyRectCount);
+
+            for (size_t i = 0; i < dirtyRectCount; ++i)
+            {
+                const auto& rect = dirtyRects[i];
+                const int left = std::max(0, rect.x);
+                const int top = std::max(0, rect.y);
+                const int right = std::min(width, rect.x + rect.width);
+                const int bottom = std::min(height, rect.y + rect.height);
+
+                if (left >= right || top >= bottom)
+                    continue;
+
+                const int rect_width = right - left;
+                const int rect_height = bottom - top;
+
+                for (int row = 0; row < rect_height; ++row)
+                {
+                    const size_t offset = (static_cast<size_t>(top + row) * static_cast<size_t>(width) + static_cast<size_t>(left)) * 4;
+                    std::memcpy(target + offset, source + offset, static_cast<size_t>(rect_width) * 4);
+                }
+
+                if (!full_update_pending)
+                    pending_paint.dirty_rects.push_back(cef_rect_t{ left, top, rect_width, rect_height });
+            }
+
+            if (!full_update_pending && pending_paint.dirty_rects.empty())
+                return;
+        }
+
         pending_paint.ready = true;
         pending_paint.tick = ::GetTickCount64();
     }
+}
+
+void BrowserManager::SendExternalBeginFrames()
+{
+    if (!CefCurrentlyOn(TID_UI))
+    {
+        bool expected = false;
+        if (!begin_frame_task_pending_.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+            return;
+
+        if (!CefPostTask(TID_UI, base::BindOnce(&BrowserManager::DispatchExternalBeginFramesOnUi, base::Unretained(this))))
+            begin_frame_task_pending_.store(false, std::memory_order_release);
+        return;
+    }
+
+    DispatchExternalBeginFramesOnUi();
+}
+
+void BrowserManager::DispatchExternalBeginFramesOnUi()
+{
+    CEF_REQUIRE_UI_THREAD();
+
+    for (auto& [id, inst] : browsers_)
+    {
+        if (!inst || !inst->visible || !inst->browser || !inst->browser->IsValid())
+            continue;
+
+        if (auto host = inst->browser->GetHost())
+            host->SendExternalBeginFrame();
+    }
+
+    begin_frame_task_pending_.store(false, std::memory_order_release);
 }
 
 bool BrowserManager::RenderAll()
@@ -1027,11 +1152,34 @@ bool BrowserManager::RenderAll()
         return false;
 
     UpdateAudioSpatialization();
+    SendExternalBeginFrames();
 
     for (auto& [id, inst] : browsers_)
     {
         if (!inst)
             continue;
+
+        if (inst->clear_texture.exchange(false, std::memory_order_acq_rel))
+        {
+            ClearPendingPaint(id);
+
+            if (inst->mode == RenderMode::WorldObject3D)
+            {
+                auto world_renderer = worldRenderers_.find(id);
+                if (world_renderer != worldRenderers_.end() && world_renderer->second)
+                    world_renderer->second->Clear();
+            }
+            else
+            {
+                inst->view.Clear();
+            }
+        }
+
+        if (!inst->visible)
+        {
+            ClearPendingPaint(id);
+            continue;
+        }
 
         auto it = pending_.find(id);
         if (it == pending_.end())
@@ -1050,6 +1198,8 @@ bool BrowserManager::RenderAll()
         }
 
         cef_rect_t rect{ 0, 0, pending_paint.width, pending_paint.height };
+        const cef_rect_t* dirty_rects = pending_paint.dirty_rects.empty() ? &rect : pending_paint.dirty_rects.data();
+        const size_t dirty_rect_count = pending_paint.dirty_rects.empty() ? 1 : pending_paint.dirty_rects.size();
 
         if (inst->mode == RenderMode::WorldObject3D)
         {
@@ -1065,10 +1215,11 @@ bool BrowserManager::RenderAll()
         }
         else
         {
-            inst->view.UpdateTexture(pending_paint.pixels.data(), &rect, 1);
+            inst->view.UpdateTexture(pending_paint.pixels.data(), dirty_rects, dirty_rect_count);
         }
 
         pending_paint.ready = false;
+        pending_paint.dirty_rects.clear();
     }
 
     bool any_visible = false;

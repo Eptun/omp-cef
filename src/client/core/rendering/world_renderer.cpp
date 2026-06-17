@@ -29,6 +29,12 @@ void WorldRenderer::OnPaint(const void* buffer, int width, int height)
     viewTexture_->Update(buffer, width, height);
 }
 
+void WorldRenderer::Clear()
+{
+    if (viewTexture_)
+        viewTexture_->Clear();
+}
+
 void WorldRenderer::ReplaceTexturesInAtomic(RpAtomic* atomic)
 {
     if (!atomic || !atomic->geometry) 

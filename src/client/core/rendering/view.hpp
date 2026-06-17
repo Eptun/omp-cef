@@ -26,6 +26,8 @@ public:
     // Renders the texture at its current position as a 2D overlay
     void Draw();
 
+    void Clear();
+
     // Returns the view's bounding rectangle for CEF
     cef_rect_t rect() const;
 

@@ -1,5 +1,7 @@
 #include "client.hpp"
 
+#include <vector>
+
 #include <include/wrapper/cef_helpers.h>
 
 #include "browser/audio.hpp"
@@ -25,6 +27,12 @@ static inline bool StartsWith(const std::string& s, const std::string& prefix)
 static inline bool Contains(const std::string& haystack, const std::string& needle)
 {
     return haystack.find(needle) != std::string::npos;
+}
+
+static inline std::string StripFragment(const std::string& url)
+{
+    const auto pos = url.find('#');
+    return pos == std::string::npos ? url : url.substr(0, pos);
 }
 
 // Detect if URL points to a site that needs Referer/Origin help (YouTube/Twitch).
@@ -129,14 +137,21 @@ void BrowserClient::GetViewRect(CefRefPtr<CefBrowser> /*browser*/, CefRect& rect
 
 void BrowserClient::OnPaint(CefRefPtr<CefBrowser> /*browser*/,
                             PaintElementType type,
-                            const RectList& /*dirtyRects*/,
+                            const RectList& dirtyRects,
                             const void* buffer,
                             int width,
                             int height)
 {
     if (!buffer || type != PET_VIEW)
         return;
-    manager_.OnPaint(browserId_, buffer, width, height);
+
+    std::vector<cef_rect_t> dirty_rects;
+    dirty_rects.reserve(dirtyRects.size());
+
+    for (const auto& rect : dirtyRects)
+        dirty_rects.push_back(cef_rect_t{ rect.x, rect.y, rect.width, rect.height });
+
+    manager_.OnPaint(browserId_, buffer, width, height, dirty_rects.data(), dirty_rects.size());
 }
 
 bool BrowserClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
@@ -235,6 +250,13 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
         bool user_gesture,
         bool is_redirect){
     const std::string url = request->GetURL().ToString();
+
+    if (frame && frame->IsMain() &&
+        StripFragment(frame->GetURL().ToString()) != StripFragment(url))
+    {
+        manager_.RequestTextureClear(browserId_);
+    }
+
     if (!IsVideoSiteUrl(url)) 
         return false;
 

@@ -65,7 +65,30 @@ bool ViewTexture::Create(LPDIRECT3DDEVICE9 device, int width, int height)
     return true;
 }
 
-void ViewTexture::Update(const void* pixels, int width, int height)
+void ViewTexture::Clear()
+{
+    if (texture_)
+    {
+        D3DLOCKED_RECT rect;
+        if (SUCCEEDED(texture_->LockRect(0, &rect, nullptr, 0)))
+        {
+            std::memset(rect.pBits, 0, static_cast<size_t>(rect.Pitch) * height_);
+            texture_->UnlockRect(0);
+        }
+    }
+
+    if (rwRaster_)
+    {
+        uint8_t* rasterPixels = RwRasterLock(rwRaster_, 0, rwRASTERLOCKWRITE);
+        if (rasterPixels)
+        {
+            std::memset(rasterPixels, 0, static_cast<size_t>(rwRaster_->stride) * height_);
+            RwRasterUnlock(rwRaster_);
+        }
+    }
+}
+
+void ViewTexture::Update(const void* pixels, int width, int height, bool updateRwRaster)
 {
     if (!texture_ || !rwRaster_ || width != width_ || height != height_) 
     {
@@ -100,6 +123,9 @@ void ViewTexture::Update(const void* pixels, int width, int height)
         texture_->UnlockRect(0);
     }
 
+    if (!updateRwRaster)
+        return;
+
     uint8_t* rasterPixels = RwRasterLock(rwRaster_, 0, rwRASTERLOCKWRITE);
     if (rasterPixels) 
     {
@@ -123,7 +149,7 @@ void ViewTexture::Update(const void* pixels, int width, int height)
     }
 }
 
-void ViewTexture::UpdatePartial(const void* pixels, int bufferWidth, int bufferHeight, int x, int y, int width, int height)
+void ViewTexture::UpdatePartial(const void* pixels, int bufferWidth, int bufferHeight, int x, int y, int width, int height, bool updateRwRaster)
 {
     if (!texture_ || !rwRaster_ || !pixels || width <= 0 || height <= 0) 
         return;
@@ -144,6 +170,9 @@ void ViewTexture::UpdatePartial(const void* pixels, int bufferWidth, int bufferH
 
         texture_->UnlockRect(0);
     }
+
+    if (!updateRwRaster)
+        return;
 
     uint8_t* rasterPixels = RwRasterLock(rwRaster_, 0, rwRASTERLOCKWRITE);
     if (rasterPixels) 

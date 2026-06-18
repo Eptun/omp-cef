@@ -554,6 +554,22 @@ HRESULT __stdcall RenderManager::hkReset(IDirect3DDevice9* self, D3DPRESENT_PARA
 
     if (isGameDevice)
     {
+        if (FAILED(hr))
+        {
+            // A Reset that keeps failing is exactly the "game stuck minimized,
+            // won't restore" case — always log it.
+            LOG_ERROR("[D3D9] Reset FAILED hr=0x{:08X} ({}x{}, windowed={})",
+                static_cast<unsigned>(hr),
+                pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
+                pp ? static_cast<int>(pp->Windowed) : -1);
+        }
+        else
+        {
+            LOG_INFO("[D3D9] Reset OK ({}x{}, windowed={})",
+                pp ? pp->BackBufferWidth : 0, pp ? pp->BackBufferHeight : 0,
+                pp ? static_cast<int>(pp->Windowed) : -1);
+        }
+
         rm->reset_status_ = false;
 
         if (SUCCEEDED(hr) && pp)

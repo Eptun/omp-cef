@@ -114,6 +114,12 @@ bool Runtime::Start()
         if (gta_)
             gta_->PumpMainThreadCallbacks();
 
+        // Re-claim the outermost WndProc (throttled to 250ms internally). SA-MP subclasses
+        // after us, so without this it sits on top and handles keys (e.g. Tab scoreboard)
+        // before we can consume them while a CEF input is focused.
+        if (wndproc_)
+            wndproc_->EnsureInstalled();
+
 		UpdateBrowserDrawState();
 
         int frames = cursor_recenter_frames_.load(std::memory_order_acquire);

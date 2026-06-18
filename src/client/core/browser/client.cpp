@@ -232,6 +232,15 @@ bool BrowserClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
         return true;
     }
 
+    if (message->GetName() == "send_chat_message")
+    {
+        CefRefPtr<CefListValue> args = message->GetArgumentList();
+        if (args->GetSize() >= 1 && args->GetType(0) == VTYPE_STRING)
+            manager_.QueueChatSend(args->GetString(0).ToString());
+
+        return true;
+    }
+
     return false;
 }
 

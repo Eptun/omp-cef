@@ -4,6 +4,8 @@
 #include <bitset>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -154,6 +156,11 @@ public:
 
     void ExitGame();
 
+    // Chat send (browser -> SA-MP). QueueChatSend is thread-safe; FlushPendingChatSends
+    // must run on the game thread (drained from App::Tick).
+    void QueueChatSend(std::string text);
+    void FlushPendingChatSends();
+
     // Native GTA SA ESC/pause menu handling
     void SetEscapeMenuMode(EscapeMenuMode mode);
 
@@ -253,4 +260,8 @@ private:
 
     // Native SA-MP/open.mp TAB player list / scoreboard handling
     PlayerListController player_list_;
+
+    // Pending chat lines queued from the CEF UI thread, flushed on the game thread.
+    std::mutex chat_send_mutex_;
+    std::vector<std::string> pending_chat_sends_;
 };

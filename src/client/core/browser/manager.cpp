@@ -19,6 +19,7 @@
 #include "scheme_handler.hpp"
 #include "system/gta.hpp"
 #include "samp/components/netgame.hpp"
+#include "samp/components/chat.hpp"
 #include "game_sa/CSprite.h"
 #include "game_sa/CCamera.h"
 #include "shared/events.hpp"
@@ -58,6 +59,47 @@ static uint32_t GetCefEventFlags()
 
 namespace
 {
+    // Forces Chromium to spawn its GPU process at startup, while the game has not
+    // created its D3D9 device yet. GPU-process D3D11/DXGI init while the game holds
+    // exclusive fullscreen can kick it to the desktop (rare, seen at join-time
+    // browser creation). Closes itself after the first paint, which guarantees the
+    // full viz pipeline (including the GPU process) is up; the GPU process then
+    // persists for the CEF lifetime.
+    class GpuPrewarmClient final : public CefClient, public CefLifeSpanHandler, public CefRenderHandler
+    {
+    public:
+        CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+        CefRefPtr<CefRenderHandler> GetRenderHandler() override { return this; }
+
+        void OnAfterCreated(CefRefPtr<CefBrowser> browser) override
+        {
+            CEF_REQUIRE_UI_THREAD();
+            LOG_INFO("[CEF] GPU prewarm browser created.");
+        }
+
+        void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override
+        {
+            rect.Set(0, 0, 1, 1);
+        }
+
+        void OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType type,
+            const RectList& dirtyRects, const void* buffer, int width, int height) override
+        {
+            if (closed_)
+                return;
+            closed_ = true;
+
+            LOG_INFO("[CEF] GPU prewarm browser painted, closing.");
+            if (auto host = browser->GetHost())
+                host->CloseBrowser(true);
+        }
+
+    private:
+        bool closed_ = false; // OnPaint only fires on the CEF UI thread
+
+        IMPLEMENT_REFCOUNTING(GpuPrewarmClient);
+    };
+
     class DevToolsClient final : public CefClient, public CefLifeSpanHandler
     {
     public:
@@ -189,6 +231,19 @@ bool BrowserManager::Initialize()
 
     // Register a custom scheme handler for "cef://"
     CefRegisterSchemeHandlerFactory("http", "cef", new LocalSchemeHandlerFactory(resource_manager_));
+
+    // Pre-warm the GPU process now, before the game creates its D3D9 device and
+    // enters exclusive fullscreen. See GpuPrewarmClient.
+    {
+        CefWindowInfo prewarmInfo;
+        prewarmInfo.SetAsWindowless(nullptr);
+
+        CefBrowserSettings prewarmSettings;
+        prewarmSettings.windowless_frame_rate = 1;
+
+        CefBrowserHost::CreateBrowser(prewarmInfo, new GpuPrewarmClient(), "about:blank",
+            prewarmSettings, nullptr, CefRequestContext::GetGlobalContext());
+    }
 
     initialized_ = true;
     uiThreadId_ = GetCurrentThreadId();
@@ -1477,6 +1532,36 @@ void BrowserManager::ExitGame()
     ExitProcess(0);
 }
 
+void BrowserManager::QueueChatSend(std::string text)
+{
+    if (text.empty())
+        return;
+
+    std::lock_guard<std::mutex> lock(chat_send_mutex_);
+    pending_chat_sends_.push_back(std::move(text));
+}
+
+void BrowserManager::FlushPendingChatSends()
+{
+    std::vector<std::string> pending;
+    {
+        std::lock_guard<std::mutex> lock(chat_send_mutex_);
+        if (pending_chat_sends_.empty())
+            return;
+        pending.swap(pending_chat_sends_);
+    }
+
+    auto* chat = GetComponent<ChatComponent>();
+    if (!chat)
+        return;
+
+    for (const auto& text : pending)
+    {
+        if (!text.empty())
+            chat->Send(text);
+    }
+}
+
 void BrowserManager::SetEscapeMenuMode(EscapeMenuMode mode)
 {
     const EscapeMenuMode previous = escape_menu_.SetMode(mode);
@@ -1897,11 +1982,19 @@ void BrowserManager::TickGameData()
         if (current.heading >= 360.f) current.heading = std::fmod(current.heading, 360.f);
     }
 
-    // Camera heading (deg)
+    // Camera heading (deg). Use the horizontal camera->player bearing (the orbit
+    // direction) rather than the forward vector: the forward vector's horizontal part
+    // collapses and its sign flips when the camera looks steeply up or down, which made
+    // the value (and anything driven by it, e.g. a rotating radar) snap 180 degrees.
     {
-        const CVector& fwd = TheCamera.m_mCameraMatrix.at;
+        const CVector& camPos = TheCamera.m_mCameraMatrix.pos;
+        float dx = current.x - camPos.x;
+        float dy = current.y - camPos.y;
 
-        float camRad = std::atan2(fwd.x, fwd.y);
+        // Fall back to the forward vector only if the camera sits on top of the player.
+        float camRad = (dx * dx + dy * dy > 1e-4f)
+            ? std::atan2(dx, dy)
+            : std::atan2(TheCamera.m_mCameraMatrix.at.x, TheCamera.m_mCameraMatrix.at.y);
         float camDeg = camRad * (180.0f / 3.14159265f);
 
         current.camera_heading = NormalizeDeg(camDeg);

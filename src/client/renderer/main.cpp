@@ -233,6 +233,20 @@ public:
             CefV8Context::GetCurrentContext()->GetFrame()->SendProcessMessage(PID_BROWSER, msg);
             return true;
         }
+        else if (name == "sendChatMessage")
+        {
+            if (arguments.size() < 1 || !arguments[0]->IsString())
+            {
+                exception = "Invalid arguments to cef.sendChatMessage(text: string)";
+                return true;
+            }
+
+            CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create("send_chat_message");
+            msg->GetArgumentList()->SetString(0, arguments[0]->GetStringValue());
+
+            CefV8Context::GetCurrentContext()->GetFrame()->SendProcessMessage(PID_BROWSER, msg);
+            return true;
+        }
         else if (name == "isChatInputOpen")
         {
             retval = CefV8Value::CreateBool(g_chat_input_open);
@@ -269,6 +283,7 @@ public:
         cefObj->SetValue("on", CefV8Value::CreateFunction("on", handler), V8_PROPERTY_ATTRIBUTE_NONE);
         cefObj->SetValue("off", CefV8Value::CreateFunction("off", handler), V8_PROPERTY_ATTRIBUTE_NONE);
         cefObj->SetValue("set_focus", CefV8Value::CreateFunction("set_focus", handler), V8_PROPERTY_ATTRIBUTE_NONE);
+        cefObj->SetValue("sendChatMessage", CefV8Value::CreateFunction("sendChatMessage", handler), V8_PROPERTY_ATTRIBUTE_NONE);
         cefObj->SetValue("isChatInputOpen", CefV8Value::CreateFunction("isChatInputOpen", handler), V8_PROPERTY_ATTRIBUTE_NONE);
         cefObj->SetValue("exitGame", CefV8Value::CreateFunction("exitGame", handler), V8_PROPERTY_ATTRIBUTE_NONE);
 

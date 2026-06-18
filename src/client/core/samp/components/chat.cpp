@@ -40,3 +40,11 @@ void ChatComponent::Clear()
 
     view_->Clear();
 }
+
+void ChatComponent::Send(const std::string& text)
+{
+    if (!view_ || text.empty())
+        return;
+
+    view_->Send(text.c_str());
+}

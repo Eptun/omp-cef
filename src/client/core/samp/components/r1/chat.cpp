@@ -29,3 +29,26 @@ void ChatView_R1::Clear()
     chat->UpdateScrollbar();
     chat->ScrollToBottom();
 }
+
+void ChatView_R1::Send(const char* text)
+{
+    if (!text || !*text)
+        return;
+
+    auto* input = sampapi::v037r1::RefInputBox();
+    if (!input)
+        return;
+
+    // Register SA-MP's reserved client commands (/save, /quit, ...) once. omp-cef
+    // disables the native chat input, so SA-MP's own Commands::Setup() never runs;
+    // without it CInput::Send forwards every "/cmd" to the server instead of
+    // dispatching the client handler.
+    static bool s_commandsReady = false;
+    if (!s_commandsReady)
+    {
+        sampapi::v037r1::Commands::Setup();
+        s_commandsReady = true;
+    }
+
+    input->Send(text);
+}

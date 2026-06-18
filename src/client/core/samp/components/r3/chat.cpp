@@ -27,3 +27,23 @@ void ChatView_R3::Clear()
     chat->UpdateScrollbar();
     chat->ScrollToBottom();
 }
+
+void ChatView_R3::Send(const char* text)
+{
+    if (!text || !*text)
+        return;
+
+    auto* input = sampapi::v037r3::RefInputBox();
+    if (!input)
+        return;
+
+    // Register SA-MP's reserved client commands (/save, /quit, ...) once. See R1 note.
+    static bool s_commandsReady = false;
+    if (!s_commandsReady)
+    {
+        sampapi::v037r3::Commands::Setup();
+        s_commandsReady = true;
+    }
+
+    input->Send(text);
+}

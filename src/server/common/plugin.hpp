@@ -3,12 +3,14 @@
 #include <asio.hpp>
 #include <memory>
 #include <shared/packet.hpp>
+#include <unordered_map>
 
 #include "api.hpp"
 #include "bridge.hpp"
 #include "logger.hpp"
 #include "network.hpp"
 #include "resource_manager.hpp"
+#include "resource_download_dialog_manager.hpp"
 #include "security.hpp"
 #include "session.hpp"
 
@@ -16,7 +18,8 @@ struct CefPluginOptions
 {
     CefLogLevel log_level = CefLogLevel::Info;
 	std::vector<uint8_t> master_resource_key = {};
-	bool resources_loader_ui = true;
+	ResourceLoaderUiMode resources_loader_mode = ResourceLoaderUiMode::Cef;
+	int resources_loader_dialog_id = ResourceDownloadDialogManager::DefaultDialogId;
 };
 
 struct RegisteredEvent
@@ -49,6 +52,8 @@ public:
 	void OnPlayerConnect(int playerid);
 	void OnPlayerClientInit(int playerid);
 	void OnPlayerDisconnect(int playerid);
+	bool OnDialogResponse(int playerid, int dialogid);
+	void SetSpawnScreenState(int playerid, bool visible);
 
 	void OnPacketReceived(const asio::ip::udp::endpoint& from, const char* data, int len);
 
@@ -80,6 +85,9 @@ private:
 	void HandleHandshakeFinalize(const asio::ip::udp::endpoint& from, const HandshakeFinalizePacket& finalize_packet, std::shared_ptr<NetworkSession> session);
 	void HandleKcpInput(std::shared_ptr<NetworkSession> session);
 
+    void BeginDownloadUi(int playerid);
+    void EndDownloadUi(int playerid);
+
 private:
 	std::unique_ptr<IPlatformBridge> bridge_;
 	std::unique_ptr<SecurityManager> security_;
@@ -90,7 +98,13 @@ private:
 	Logger logger_;
 
 	std::vector<uint8_t> master_resource_key_;
-	bool resources_loader_ui_ = true;
+	struct PlayerUiState
+	{
+		bool spawnScreenVisible = true;
+	};
+
+	ResourceDownloadDialogManager resource_download_dialogs_;
+	std::unordered_map<int, PlayerUiState> player_ui_states_;
 
 	asio::io_context io_context_;
 	asio::steady_timer transfer_timer_{ io_context_ };

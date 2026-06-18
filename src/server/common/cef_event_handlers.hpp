@@ -32,6 +32,15 @@ struct ICefEventHandler
     virtual void onCefReady(int playerid) {}
     virtual void onCefBrowserCreated(int playerid, int browserId, bool success, int code, const char* reason) {}
     virtual void onCefDownloadStart(int playerid) {}
+    virtual void onCefDownloadProgress(
+        int playerid,
+        const char* fileName,
+        int filePercent,
+        int totalPercent,
+        int fileDownloadedKb,
+        int fileTotalKb,
+        int totalDownloadedKb,
+        int totalKb) {}
     virtual void onCefDownloadFinish(int playerid) {}
     virtual void onCefPressKey(int playerid, int key, int scancode, int modifiers, bool down, bool repeat) {}
     virtual void onCefChatInputState(int playerid, bool open) {}
